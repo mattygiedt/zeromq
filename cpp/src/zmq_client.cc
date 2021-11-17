@@ -1,52 +1,44 @@
 #include <iostream>
 #include <string>
-#include <thread>
 
 #include "common/application_traits.h"
-
-std::atomic<bool> running_;
-std::mutex running_mutex_;
-std::condition_variable running_cv_;
-
-auto SignalHandler(int /*unused*/) -> void {
-  running_ = false;
-  running_cv_.notify_all();
-}
-
-auto SetupSignalHandler() -> void {
-  struct sigaction sig_int_handler;
-  sig_int_handler.sa_handler = SignalHandler;
-  sigemptyset(&sig_int_handler.sa_mask);
-  sig_int_handler.sa_flags = 0;
-  sigaction(SIGINT, &sig_int_handler, nullptr);
-}
-
-auto WaitForSignal() -> void {
-  running_ = true;
-  while (running_) {
-    std::unique_lock<decltype(running_mutex_)> lock(running_mutex_);
-    running_cv_.wait(lock);
-  }
-}
+#include "common/signal_handler.h"
 
 auto main(int argc, char** argv) -> int {
   if (argc < 2) {
     std::cout << "usage: " << argv[0] << " ADDR." << std::endl;
-    return 0;
+    return 1;
   }
 
   std::string addr = argv[1];
   spdlog::info("client connect: {}", addr);
 
-  typename common::ClientTraits::ClientSocket client;
-  client.Connect(addr);
+  auto connected_event = [](const zmq_event_t& event, const char* addr) {
+    spdlog::info("client connected: addr {}, fd {}", addr, event.value);
+  };
 
-  client.ProcessMessages(
-      [](const zmq::message_t& msg) { spdlog::info(msg.to_string()); });
+  auto message_handler = [](zmq::message_t&& msg) {
+    spdlog::info(msg.to_string());
+  };
 
-  client.SendMessage("Hello World");
+  typename common::ClientTraits::ClientSocket client_one;
+  typename common::ClientTraits::ClientSocket client_two;
+
+  client_one.Monitor(connected_event, ZMQ_EVENT_CONNECTED);
+  client_one.Connect(addr);
+  client_one.ProcessMessages(message_handler);
+
+  client_two.Monitor(connected_event, ZMQ_EVENT_CONNECTED);
+  client_two.Connect(addr);
+  client_two.ProcessMessages(message_handler);
+
+  client_one.SendMessage("Hello World");
+  client_two.SendMessage("I like pizza");
 
   WaitForSignal();
 
-  return 1;
+  client_one.Close();
+  client_two.Close();
+
+  return 0;
 }

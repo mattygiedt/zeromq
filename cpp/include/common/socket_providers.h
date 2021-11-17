@@ -4,6 +4,7 @@
 
 #include <thread>
 
+#include "eventpp/eventdispatcher.h"
 #include "spdlog/spdlog.h"
 #include "zmq.hpp"
 
@@ -17,35 +18,86 @@ class SocketMonitor : public zmq::monitor_t {
  public:
   constexpr static Millis kDefaultTimeout{10000};
 
-  void on_event_connected(const zmq_event_t& /*unused*/,
-                          const char* addr) override {
-    spdlog::info("connection established: {}", addr);
-    connected_ = true;
-    cv_.notify_all();
+  auto on_event_connected(const zmq_event_t& event, const char* addr)
+      -> void override {
+    dispatcher_.dispatch(event.event, event, addr);
+    dispatcher_.dispatch(ZMQ_EVENT_ALL, event, addr);
+  }
+  auto on_event_connect_delayed(const zmq_event_t& event, const char* addr)
+      -> void override {
+    dispatcher_.dispatch(event.event, event, addr);
+    dispatcher_.dispatch(ZMQ_EVENT_ALL, event, addr);
+  }
+  auto on_event_connect_retried(const zmq_event_t& event, const char* addr)
+      -> void override {
+    dispatcher_.dispatch(event.event, event, addr);
+    dispatcher_.dispatch(ZMQ_EVENT_ALL, event, addr);
+  }
+  auto on_event_listening(const zmq_event_t& event, const char* addr)
+      -> void override {
+    dispatcher_.dispatch(event.event, event, addr);
+    dispatcher_.dispatch(ZMQ_EVENT_ALL, event, addr);
+  }
+  auto on_event_bind_failed(const zmq_event_t& event, const char* addr)
+      -> void override {
+    dispatcher_.dispatch(event.event, event, addr);
+    dispatcher_.dispatch(ZMQ_EVENT_ALL, event, addr);
+  }
+  auto on_event_accepted(const zmq_event_t& event, const char* addr)
+      -> void override {
+    dispatcher_.dispatch(event.event, event, addr);
+    dispatcher_.dispatch(ZMQ_EVENT_ALL, event, addr);
+  }
+  auto on_event_accept_failed(const zmq_event_t& event, const char* addr)
+      -> void override {
+    dispatcher_.dispatch(event.event, event, addr);
+    dispatcher_.dispatch(ZMQ_EVENT_ALL, event, addr);
+  }
+  auto on_event_closed(const zmq_event_t& event, const char* addr)
+      -> void override {
+    dispatcher_.dispatch(event.event, event, addr);
+    dispatcher_.dispatch(ZMQ_EVENT_ALL, event, addr);
+  }
+  auto on_event_close_failed(const zmq_event_t& event, const char* addr)
+      -> void override {
+    dispatcher_.dispatch(event.event, event, addr);
+    dispatcher_.dispatch(ZMQ_EVENT_ALL, event, addr);
+  }
+  auto on_event_disconnected(const zmq_event_t& event, const char* addr)
+      -> void override {
+    dispatcher_.dispatch(event.event, event, addr);
+    dispatcher_.dispatch(ZMQ_EVENT_ALL, event, addr);
+  }
+  auto on_event_handshake_failed_no_detail(const zmq_event_t& event,
+                                           const char* addr) -> void override {
+    dispatcher_.dispatch(event.event, event, addr);
+    dispatcher_.dispatch(ZMQ_EVENT_ALL, event, addr);
+  }
+  auto on_event_handshake_failed_protocol(const zmq_event_t& event,
+                                          const char* addr) -> void override {
+    dispatcher_.dispatch(event.event, event, addr);
+    dispatcher_.dispatch(ZMQ_EVENT_ALL, event, addr);
+  }
+  auto on_event_handshake_failed_auth(const zmq_event_t& event,
+                                      const char* addr) -> void override {
+    dispatcher_.dispatch(event.event, event, addr);
+    dispatcher_.dispatch(ZMQ_EVENT_ALL, event, addr);
+  }
+  auto on_event_handshake_succeeded(const zmq_event_t& event, const char* addr)
+      -> void override {
+    dispatcher_.dispatch(event.event, event, addr);
+    dispatcher_.dispatch(ZMQ_EVENT_ALL, event, addr);
   }
 
-  void on_event_disconnected(const zmq_event_t& /*unused*/,
-                             const char* addr) override {
-    spdlog::info("connection closed: {}", addr);
-    connected_ = false;
+  template <typename Callback>
+  auto AddListener(const std::uint16_t event_type, Callback&& callback)
+      -> void {
+    dispatcher_.appendListener(event_type, callback);
   }
-
-  auto WaitForConnect(const Millis& timeout = kDefaultTimeout) -> bool {
-    if (connected_) {
-      return true;
-    }
-
-    Lock lk(mtx_);
-    cv_.wait_for(lk, timeout);
-    return connected_;
-  }
-
-  auto IsConnected() -> bool { return connected_; }
 
  private:
-  std::mutex mtx_;
-  std::condition_variable cv_;
-  std::atomic<bool> connected_{false};
+  eventpp::EventDispatcher<std::uint16_t, void(const zmq_event_t&, const char*)>
+      dispatcher_;
 };
 
 struct BaseProvider {
@@ -80,11 +132,18 @@ struct BaseProvider {
           auto res = events[i].socket.recv(msg, zmq::recv_flags::dontwait);
 
           if (res) {
-            callback(msg);
+            callback(std::move(msg));
           }
         }
       }
     });
+  }
+
+  template <typename MonitorCallback>
+  auto Monitor(MonitorCallback&& callback,
+               const std::uint16_t event_type = ZMQ_EVENT_ALL) -> void {
+    socket_monitor_.AddListener(event_type,
+                                std::forward<MonitorCallback>(callback));
   }
 
   auto Close() -> void {
@@ -105,32 +164,30 @@ struct BaseProvider {
 };
 
 class ClientSocketProvider : public BaseProvider {
- private:
-  using Millis = std::chrono::milliseconds;
-  using EventVector = std::vector<zmq::poller_event<>>;
-
  public:
-  constexpr static Millis kConnectTimeout{1000};
-
-  ClientSocketProvider() : BaseProvider(zmq::socket_type::client) {
-    monitor_ = std::thread(
-        [&]() { socket_monitor_.monitor(socket_, "inproc://monitor"); });
+  ClientSocketProvider(const bool monitor_flag = true)
+      : BaseProvider(zmq::socket_type::client) {
+    if (monitor_flag) {
+      monitor_ = std::thread(
+          [&]() { socket_monitor_.monitor(socket_, "inproc://monitor"); });
+    }
   }
 
-  auto Connect(const std::string& addr, const Millis& timeout = kConnectTimeout)
-      -> bool {
+  auto Connect(const std::string& addr) -> void {
     spdlog::info("socket_.connect({})", addr);
     socket_.connect(addr);
-    running_ = socket_monitor_.WaitForConnect(timeout);
-    return running_;
+    running_ = true;
   }
 };
 
 class ServerSocketProvider : public BaseProvider {
  public:
-  ServerSocketProvider() : BaseProvider(zmq::socket_type::server) {
-    monitor_ = std::thread(
-        [&]() { socket_monitor_.monitor(socket_, "inproc://monitor"); });
+  ServerSocketProvider(const bool monitor_flag = true)
+      : BaseProvider(zmq::socket_type::server) {
+    if (monitor_flag) {
+      monitor_ = std::thread(
+          [&]() { socket_monitor_.monitor(socket_, "inproc://monitor"); });
+    }
   }
 
   auto Bind(const std::string& addr) -> void {
