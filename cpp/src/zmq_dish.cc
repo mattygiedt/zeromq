@@ -12,21 +12,16 @@ auto main(int argc, char** argv) -> int {
 
   const auto* addr = argv[1];
 
-  auto connected_event = [](const zmq_event_t& event, const char* addr) {
-    spdlog::info("client connected: addr {}, fd {}", addr, event.value);
-  };
-
   auto message_handler = [](zmq::message_t&& msg) {
     spdlog::info(msg.to_string());
   };
 
-  typename common::ClientTraits::ClientSocket client;
+  typename common::DishTraits::DishSocket dish;
 
-  client.Monitor(connected_event, ZMQ_EVENT_CONNECTED);
-  client.Connect(addr);
-  client.SendMessage("Hello World");
-  client.ProcessMessages(message_handler);
-  client.Close();
+  dish.Join(common::RadioTraits::kGroup);
+  dish.Bind(addr);
+  dish.ProcessMessages(message_handler);
+  dish.Close();
 
   return 0;
 }

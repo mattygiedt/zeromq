@@ -2,6 +2,7 @@
 
 #define ZMQ_BUILD_DRAFT_API 1
 
+#include <csignal>
 #include <thread>
 
 #include "eventpp/eventdispatcher.h"
@@ -12,11 +13,8 @@ namespace common {
 
 class SocketMonitor : public zmq::monitor_t {
  private:
-  using Lock = std::unique_lock<std::mutex>;
-  using Millis = std::chrono::milliseconds;
-
  public:
-  constexpr static Millis kDefaultTimeout{10000};
+  constexpr static auto kMonitorTimeout{100};
 
   auto on_event_connected(const zmq_event_t& event, const char* addr)
       -> void override {
@@ -100,6 +98,12 @@ class SocketMonitor : public zmq::monitor_t {
       dispatcher_;
 };
 
+namespace internal {
+std::function<void(int)> shutdown_handler;
+void signal_handler(int signal) { shutdown_handler(signal); }
+}  // namespace internal
+
+template <zmq::socket_type ZmqSocketType>
 struct BaseProvider {
  private:
   using EventVector = std::vector<zmq::poller_event<>>;
@@ -107,36 +111,28 @@ struct BaseProvider {
  public:
   constexpr static std::chrono::milliseconds kPollTimeout{100};
 
-  auto SendMessage(const std::string& str, const std::uint32_t routing_id = 0)
-      -> zmq::send_result_t {
-    if (routing_id == 0) {
-      return socket_.send(zmq::buffer(str), zmq::send_flags::dontwait);
-    } else {
-      zmq::message_t msg{str};
-      msg.set_routing_id(routing_id);
-      return socket_.send(msg, zmq::send_flags::dontwait);
-    }
-  }
-
   template <typename MessageCallback>
   auto ProcessMessages(MessageCallback&& callback) -> void {
-    listener_ = std::thread([&]() {
-      zmq::poller_t poller;
-      poller.add(socket_, zmq::event_flags::pollin);
-      EventVector events{poller.size()};
+    if (!running_) {
+      spdlog::warn("ProcessMessages: running == false");
+      return;
+    }
 
-      while (running_) {
-        const int num_events = poller.wait_all(events, kPollTimeout);
-        for (int i = 0; i < num_events; ++i) {
-          zmq::message_t msg;
-          auto res = events[i].socket.recv(msg, zmq::recv_flags::dontwait);
+    zmq::poller_t poller;
+    poller.add(socket_, zmq::event_flags::pollin);
+    EventVector events{poller.size()};
 
-          if (res) {
-            callback(std::move(msg));
-          }
+    while (running_) {
+      const int num_events = poller.wait_all(events, kPollTimeout);
+      for (int i = 0; i < num_events; ++i) {
+        zmq::message_t msg;
+        auto res = events[i].socket.recv(msg, zmq::recv_flags::dontwait);
+
+        if (res) {
+          callback(std::move(msg));
         }
       }
-    });
+    }
   }
 
   template <typename MonitorCallback>
@@ -148,52 +144,149 @@ struct BaseProvider {
 
   auto Close() -> void {
     running_ = false;
-    listener_.join();
+    if (monitor_thr_.joinable()) {
+      monitor_thr_.join();
+    }
+    socket_.close();
   }
 
+  auto Socket() -> zmq::socket_ref { return socket_ref_; }
+
+  constexpr auto SocketType() -> zmq::socket_type { return ZmqSocketType; }
+
  protected:
-  BaseProvider(zmq::socket_type type)
-      : running_{false}, context_{1}, socket_{context_, type} {}
+  BaseProvider(const bool monitor_flag)
+      : running_{true},
+        context_{1},
+        socket_{context_, ZmqSocketType},
+        socket_ref_{socket_} {
+    std::signal(SIGTERM, internal::signal_handler);
+    internal::shutdown_handler = [&](int /*unused*/) { Close(); };
+
+    if (monitor_flag) {
+      monitor_thr_ = std::thread([&]() { MonitorSockets(); });
+    }
+  }
+
+  ~BaseProvider() { Close(); }
+
+  auto MonitorSockets() -> void {
+    socket_monitor_.init(socket_, "inproc://monitor");
+    while (running_) {
+      socket_monitor_.check_event(SocketMonitor::kMonitorTimeout);
+    }
+  }
 
   std::atomic<bool> running_;
   SocketMonitor socket_monitor_;
   zmq::context_t context_;
   zmq::socket_t socket_;
-  std::thread listener_;
-  std::thread monitor_;
+  zmq::socket_ref socket_ref_;
+  std::thread monitor_thr_;
 };
 
-class ClientSocketProvider : public BaseProvider {
+class ClientSocketProvider : public BaseProvider<zmq::socket_type::client> {
  public:
   ClientSocketProvider(const bool monitor_flag = true)
-      : BaseProvider(zmq::socket_type::client) {
-    if (monitor_flag) {
-      monitor_ = std::thread(
-          [&]() { socket_monitor_.monitor(socket_, "inproc://monitor"); });
-    }
-  }
+      : BaseProvider<zmq::socket_type::client>(monitor_flag) {}
 
   auto Connect(const std::string& addr) -> void {
     spdlog::info("socket_.connect({})", addr);
     socket_.connect(addr);
     running_ = true;
   }
+
+  auto SendMessage(const std::string& str) -> zmq::send_result_t {
+    return socket_.send(zmq::buffer(str), zmq::send_flags::dontwait);
+  }
 };
 
-class ServerSocketProvider : public BaseProvider {
+class ServerSocketProvider : public BaseProvider<zmq::socket_type::server> {
  public:
   ServerSocketProvider(const bool monitor_flag = true)
-      : BaseProvider(zmq::socket_type::server) {
-    if (monitor_flag) {
-      monitor_ = std::thread(
-          [&]() { socket_monitor_.monitor(socket_, "inproc://monitor"); });
-    }
+      : BaseProvider<zmq::socket_type::server>(monitor_flag) {}
+
+  auto Bind(const std::string& addr) -> void {
+    spdlog::info("socket_.bind({})", addr);
+    socket_.bind(addr);
+  }
+
+  auto SendMessage(const std::string& str, const std::uint32_t routing_id)
+      -> zmq::send_result_t {
+    zmq::message_t msg{str};
+    msg.set_routing_id(routing_id);
+    return socket_.send(msg, zmq::send_flags::dontwait);
+  }
+};
+
+class RadioSocketProvider : public BaseProvider<zmq::socket_type::radio> {
+ public:
+  RadioSocketProvider(const bool monitor_flag = true)
+      : BaseProvider<zmq::socket_type::radio>(monitor_flag) {}
+
+  auto Connect(const std::string& addr) -> void {
+    spdlog::info("socket_.connect({})", addr);
+    socket_.connect(addr);
+  }
+
+  auto SendMessage(const std::string& str, const std::string& group)
+      -> zmq::send_result_t {
+    zmq::message_t msg{str};
+    msg.set_group(group.c_str());
+    return socket_.send(msg, zmq::send_flags::dontwait);
+  }
+};
+
+class DishSocketProvider : public BaseProvider<zmq::socket_type::dish> {
+ public:
+  DishSocketProvider(const bool monitor_flag = true)
+      : BaseProvider<zmq::socket_type::dish>(monitor_flag) {}
+
+  auto Join(const std::string& group) -> void {
+    spdlog::info("socket_.join({})", group);
+    socket_.join(group.c_str());
   }
 
   auto Bind(const std::string& addr) -> void {
     spdlog::info("socket_.bind({})", addr);
     socket_.bind(addr);
-    running_ = true;
+  }
+};
+
+class SubSocketProvider : public BaseProvider<zmq::socket_type::sub> {
+ public:
+  SubSocketProvider(const bool monitor_flag = true)
+      : BaseProvider<zmq::socket_type::sub>(monitor_flag) {}
+
+  auto Subscribe(const std::string& group) -> void {
+    spdlog::info("socket_.subscribe({})", group);
+    socket_.set(zmq::sockopt::subscribe, group.c_str());
+  }
+
+  auto Connect(const std::string& addr) -> void {
+    spdlog::info("socket_.connect({})", addr);
+    socket_.connect(addr);
+  }
+};
+
+class PubSocketProvider : public BaseProvider<zmq::socket_type::pub> {
+ public:
+  PubSocketProvider(const bool monitor_flag = true)
+      : BaseProvider<zmq::socket_type::pub>(monitor_flag) {}
+
+  auto Bind(const std::string& addr) -> void {
+    spdlog::info("socket_.bind({})", addr);
+    socket_.bind(addr);
+  }
+
+  auto SendMessage(const std::string& str, const bool sndmore = false)
+      -> zmq::send_result_t {
+    zmq::message_t msg{str};
+    if (!sndmore) {
+      return socket_.send(msg, zmq::send_flags::none);
+    } else {
+      return socket_.send(msg, zmq::send_flags::sndmore);
+    }
   }
 };
 

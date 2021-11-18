@@ -11,16 +11,35 @@
 
 namespace common {
 
-struct CommonTraits {};
+struct CommonTraits {
+  static constexpr auto kLoop = 100;
+  static constexpr auto kLoopWait = std::chrono::milliseconds(100);
+};
 
 struct ClientTraits : public CommonTraits {
-  static constexpr auto kQueueWait = std::chrono::milliseconds(100);
   using ClientSocket = ClientSocketProvider;
 };
 
 struct ServerTraits : public CommonTraits {
-  static constexpr auto kQueueWait = std::chrono::milliseconds(100);
   using ServerSocket = ServerSocketProvider;
+};
+
+struct RadioTraits : public CommonTraits {
+  inline static const std::string kGroup{"//eqty/aapl"};
+  inline static const std::string kAddr{"udp://239.192.0.1:7500"};
+  using RadioSocket = RadioSocketProvider;
+};
+
+struct DishTraits : public CommonTraits {
+  using DishSocket = DishSocketProvider;
+};
+
+struct SubTraits : public CommonTraits {
+  using SubSocket = SubSocketProvider;
+};
+
+struct PubTraits : public CommonTraits {
+  using PubSocket = PubSocketProvider;
 };
 
 }  // namespace common

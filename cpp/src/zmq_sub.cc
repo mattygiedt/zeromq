@@ -13,20 +13,20 @@ auto main(int argc, char** argv) -> int {
   const auto* addr = argv[1];
 
   auto connected_event = [](const zmq_event_t& event, const char* addr) {
-    spdlog::info("client connected: addr {}, fd {}", addr, event.value);
+    spdlog::info("sub connected: addr {}, fd {}", addr, event.value);
   };
 
   auto message_handler = [](zmq::message_t&& msg) {
     spdlog::info(msg.to_string());
   };
 
-  typename common::ClientTraits::ClientSocket client;
+  typename common::SubTraits::SubSocket sub;
 
-  client.Monitor(connected_event, ZMQ_EVENT_CONNECTED);
-  client.Connect(addr);
-  client.SendMessage("Hello World");
-  client.ProcessMessages(message_handler);
-  client.Close();
+  sub.Monitor(connected_event, ZMQ_EVENT_CONNECTED);
+  sub.Subscribe("");
+  sub.Connect(addr);
+  sub.ProcessMessages(message_handler);
+  sub.Close();
 
   return 0;
 }

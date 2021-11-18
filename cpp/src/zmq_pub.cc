@@ -17,20 +17,23 @@ auto main(int argc, char** argv) -> int {
                  event.value);
   };
 
-  typename common::ServerTraits::ServerSocket server;
-  server.Monitor(socket_event);
-  server.Bind(addr);
-  server.ProcessMessages([&server](zmq::message_t&& msg) {
-    spdlog::info(msg.to_string());
-    auto str = msg.to_string();
-    server.SendMessage(str, msg.routing_id());
-  });
+  typename common::PubTraits::PubSocket pub;
 
-  spdlog::info("all done, closing");
+  pub.Monitor(socket_event);
+  pub.Bind(addr);
 
-  server.Close();
+  for (auto i = 0; i < common::CommonTraits::kLoop; ++i) {
+    std::this_thread::sleep_for(common::CommonTraits::kLoopWait);
+    if (i % 2 == 0) {
+      // zmq::send_flags::none
+      pub.SendMessage("Hello World: " + std::to_string(i));
+    } else {
+      // zmq::send_flags::sndmore
+      pub.SendMessage("Hello World: " + std::to_string(i), true);
+    }
+  }
 
-  spdlog::info("all done, done");
+  pub.Close();
 
   return 0;
 }
