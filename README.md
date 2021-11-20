@@ -62,9 +62,9 @@ Here's the ubiquitous echo example, where the client send a string `"Hello World
 ### Radio / Dish
 ZMQ does multicast. Technically, I think there is / was support for transmitting UDP previous to these socket types, but not 100 delta. Anyway, here's a working example!
 
-The `radio` socket publishes multicast packets to a given group, defined as a `char *`. This is similar to the `PUB/SUB` but less wonky than using message parts to denote envelopes. The group defined here is `"//eqty/aapl"`, which both the radio and dish use.
+The `radio` socket publishes multicast packets to a given per-message group. This is similar to the `PUB/SUB` but less wonky than using message parts to denote envelopes. The `dish` socket joins `char *` group(s) to receive messages. This is similar to the pub `zmq::sockopt::subscribe` workflow, but again less wonky. You want the radio to broadcast messages to a group that your dish sockets have joined, with each socket type using the same multicast address.
 
-Radio publishes `Hello World` plus the `for_loop` counter value, dish simply prints out the contents of the message it receives. Connect multiple dish sockets and watch the magic happen. The included address `"udp://239.192.0.1:7500"` works for me, might need to change for you; I am many things, but a network admin is not one of them.
+Radio publishes `Hello World` plus the `for_loop` counter value to the `"//eqty/aapl"` group. Dish joins `"//eqty/aapl"` and simply prints out the contents of the message it receives. Connect multiple dish sockets and watch the magic happen. The included address `"udp://239.192.0.1:7500"` works for me, might need to change for you; I am many things, but a network admin is not one of them.
 ```
   // zmq_radio.cc
   typename common::RadioTraits::RadioSocket radio;
@@ -94,4 +94,4 @@ Radio publishes `Hello World` plus the `for_loop` counter value, dish simply pri
 ```
 
 ### Pub / Sub / Push / Pull / Pair
-All your favorites are included because why not. Actually it's interesting to compare / contrast the new sockets against the battle-tested giants
+All your favorites are included because why not. Actually it's interesting to compare / contrast the new sockets against the battle-tested giants.
