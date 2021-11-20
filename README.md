@@ -62,7 +62,9 @@ Here's the ubiquitous echo example, where the client send a string `"Hello World
 ### Radio / Dish
 ZMQ does multicast. Technically, I think there is / was support for transmitting UDP previous to these socket types, but not 100 delta. Anyway, here's a working example!
 
-The `radio` socket publishes multicast packets to a given group, defined as a `char *`. This is similar to the `PUB/SUB` but less wonky than using message parts to denote envelopes. The group defined here is `"//eqty/aapl"`, which both the radio and dish use. Radio publishes `Hello World` plus the `for_loop` counter value so you can connect multiple dish sockets and watch the magic happen. The included address `"udp://239.192.0.1:7500"` works for me, might need to change for you; I am many things, but a network admin is not one of them.
+The `radio` socket publishes multicast packets to a given group, defined as a `char *`. This is similar to the `PUB/SUB` but less wonky than using message parts to denote envelopes. The group defined here is `"//eqty/aapl"`, which both the radio and dish use.
+
+Radio publishes `Hello World` plus the `for_loop` counter value, dish simply prints out the contents of the message it receives. Connect multiple dish sockets and watch the magic happen. The included address `"udp://239.192.0.1:7500"` works for me, might need to change for you; I am many things, but a network admin is not one of them.
 ```
   // zmq_radio.cc
   typename common::RadioTraits::RadioSocket radio;
@@ -92,4 +94,4 @@ The `radio` socket publishes multicast packets to a given group, defined as a `c
 ```
 
 ### Pub / Sub / Push / Pull / Pair
-All your favorites are included because why not. Actually it's interesting to compare / contrast the new sockets against the battle-tested work horses.
+All your favorites are included because why not. Actually it's interesting to compare / contrast the new sockets against the battle-tested giants
