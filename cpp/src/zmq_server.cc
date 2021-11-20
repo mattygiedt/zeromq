@@ -18,6 +18,7 @@ auto main(int argc, char** argv) -> int {
   };
 
   typename common::ServerTraits::ServerSocket server;
+
   server.Monitor(socket_event);
   server.Bind(addr);
   server.ProcessMessages([&server](zmq::message_t&& msg) {
@@ -26,11 +27,7 @@ auto main(int argc, char** argv) -> int {
     server.SendMessage(str, msg.routing_id());
   });
 
-  spdlog::info("all done, closing");
-
   server.Close();
-
-  spdlog::info("all done, done");
 
   return 0;
 }

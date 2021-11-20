@@ -109,7 +109,8 @@ struct BaseProvider {
   using EventVector = std::vector<zmq::poller_event<>>;
 
  public:
-  constexpr static std::chrono::milliseconds kPollTimeout{100};
+  static constexpr zmq::send_flags kNone = zmq::send_flags::none;
+  static constexpr std::chrono::milliseconds kPollTimeout{100};
 
   template <typename MessageCallback>
   auto ProcessMessages(MessageCallback&& callback) -> void {
@@ -196,8 +197,9 @@ class ClientSocketProvider : public BaseProvider<zmq::socket_type::client> {
     running_ = true;
   }
 
-  auto SendMessage(const std::string& str) -> zmq::send_result_t {
-    return socket_.send(zmq::buffer(str), zmq::send_flags::dontwait);
+  auto SendMessage(const std::string& str, const zmq::send_flags flag = kNone)
+      -> zmq::send_result_t {
+    return socket_.send(zmq::buffer(str), flag);
   }
 };
 
@@ -211,11 +213,11 @@ class ServerSocketProvider : public BaseProvider<zmq::socket_type::server> {
     socket_.bind(addr);
   }
 
-  auto SendMessage(const std::string& str, const std::uint32_t routing_id)
-      -> zmq::send_result_t {
+  auto SendMessage(const std::string& str, const std::uint32_t routing_id,
+                   const zmq::send_flags flag = kNone) -> zmq::send_result_t {
     zmq::message_t msg{str};
     msg.set_routing_id(routing_id);
-    return socket_.send(msg, zmq::send_flags::dontwait);
+    return socket_.send(msg, flag);
   }
 };
 
@@ -229,11 +231,11 @@ class RadioSocketProvider : public BaseProvider<zmq::socket_type::radio> {
     socket_.connect(addr);
   }
 
-  auto SendMessage(const std::string& str, const std::string& group)
-      -> zmq::send_result_t {
+  auto SendMessage(const std::string& str, const std::string& group,
+                   const zmq::send_flags flag = kNone) -> zmq::send_result_t {
     zmq::message_t msg{str};
     msg.set_group(group.c_str());
-    return socket_.send(msg, zmq::send_flags::dontwait);
+    return socket_.send(msg, flag);
   }
 };
 
@@ -279,14 +281,43 @@ class PubSocketProvider : public BaseProvider<zmq::socket_type::pub> {
     socket_.bind(addr);
   }
 
-  auto SendMessage(const std::string& str, const bool sndmore = false)
+  auto SendMessage(const std::string& str, const zmq::send_flags flag = kNone)
       -> zmq::send_result_t {
     zmq::message_t msg{str};
-    if (!sndmore) {
-      return socket_.send(msg, zmq::send_flags::none);
-    } else {
-      return socket_.send(msg, zmq::send_flags::sndmore);
-    }
+    return socket_.send(msg, flag);
+  }
+};
+
+class PullSocketProvider : public BaseProvider<zmq::socket_type::pull> {
+ public:
+  PullSocketProvider(const bool monitor_flag = true)
+      : BaseProvider<zmq::socket_type::pull>(monitor_flag) {}
+
+  auto Subscribe(const std::string& group) -> void {
+    spdlog::info("socket_.subscribe({})", group);
+    socket_.set(zmq::sockopt::subscribe, group.c_str());
+  }
+
+  auto Connect(const std::string& addr) -> void {
+    spdlog::info("socket_.connect({})", addr);
+    socket_.connect(addr);
+  }
+};
+
+class PushSocketProvider : public BaseProvider<zmq::socket_type::push> {
+ public:
+  PushSocketProvider(const bool monitor_flag = true)
+      : BaseProvider<zmq::socket_type::push>(monitor_flag) {}
+
+  auto Bind(const std::string& addr) -> void {
+    spdlog::info("socket_.bind({})", addr);
+    socket_.bind(addr);
+  }
+
+  auto SendMessage(const std::string& str, const zmq::send_flags flag = kNone)
+      -> zmq::send_result_t {
+    zmq::message_t msg{str};
+    return socket_.send(msg, flag);
   }
 };
 

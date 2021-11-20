@@ -18,6 +18,7 @@ auto main(int argc, char** argv) -> int {
   };
 
   typename common::PubTraits::PubSocket pub;
+  const zmq::send_flags kSendmore = zmq::send_flags::sndmore;
 
   pub.Monitor(socket_event);
   pub.Bind(addr);
@@ -29,7 +30,7 @@ auto main(int argc, char** argv) -> int {
       pub.SendMessage("Hello World: " + std::to_string(i));
     } else {
       // zmq::send_flags::sndmore
-      pub.SendMessage("Hello World: " + std::to_string(i), true);
+      pub.SendMessage("Hello World: " + std::to_string(i), kSendmore);
     }
   }
 

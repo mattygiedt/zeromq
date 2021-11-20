@@ -12,8 +12,8 @@
 namespace common {
 
 struct CommonTraits {
-  static constexpr auto kLoop = 100;
-  static constexpr auto kLoopWait = std::chrono::milliseconds(100);
+  static constexpr auto kLoop = 1000000;
+  static constexpr auto kLoopWait = std::chrono::milliseconds(1);
 };
 
 struct ClientTraits : public CommonTraits {
