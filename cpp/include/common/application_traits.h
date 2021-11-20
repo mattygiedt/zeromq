@@ -42,4 +42,17 @@ struct PubTraits : public CommonTraits {
   using PubSocket = PubSocketProvider;
 };
 
+struct PullTraits : public CommonTraits {
+  using PullSocket = PullSocketProvider;
+};
+
+struct PushTraits : public CommonTraits {
+  using PushSocket = PushSocketProvider;
+};
+
+struct PairTraits : public CommonTraits {
+  using ClientSocket = PairSocketProvider<PairSocketType::CLIENT>;
+  using ServerSocket = PairSocketProvider<PairSocketType::SERVER>;
+};
+
 }  // namespace common

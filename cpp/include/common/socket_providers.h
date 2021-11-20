@@ -321,4 +321,30 @@ class PushSocketProvider : public BaseProvider<zmq::socket_type::push> {
   }
 };
 
+enum class PairSocketType : std::uint8_t { CLIENT, SERVER };
+
+template <PairSocketType Type>
+class PairSocketProvider : public BaseProvider<zmq::socket_type::pair> {
+ public:
+  PairSocketProvider(const bool monitor_flag = true)
+      : BaseProvider<zmq::socket_type::pair>(monitor_flag) {}
+
+  auto CreateHandle(const std::string& addr) -> void {
+    if constexpr (Type == PairSocketType::CLIENT) {
+      spdlog::info("socket_.connect({})", addr);
+      socket_.connect(addr);
+    }
+    if constexpr (Type == PairSocketType::SERVER) {
+      spdlog::info("socket_.bind({})", addr);
+      socket_.bind(addr);
+    }
+  }
+
+  auto SendMessage(const std::string& str, const zmq::send_flags flag = kNone)
+      -> zmq::send_result_t {
+    zmq::message_t msg{str};
+    return socket_.send(msg, flag);
+  }
+};
+
 }  // namespace common

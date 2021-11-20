@@ -117,3 +117,22 @@ target_link_libraries( zmq_sub
                        spdlog::spdlog
                        cppzmq
                        tcmalloc )
+
+add_executable( zmq_pair "./src/zmq_pair.cc" )
+
+set_target_properties( zmq_pair
+                       PROPERTIES
+                       CXX_STANDARD 20
+                       CXX_EXTENSIONS OFF
+                       CXX_STANDARD_REQUIRED ON
+                       CXX_POSITION_INDEPENDENT_CODE ON )
+
+target_include_directories( zmq_pair
+                            PUBLIC
+                            "${CMAKE_CURRENT_SOURCE_DIR}/include")
+
+target_link_libraries( zmq_pair
+                       PUBLIC
+                       spdlog::spdlog
+                       cppzmq
+                       tcmalloc )
